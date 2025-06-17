@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
 import os
-import together
+import requests
 import googlemaps
 from datetime import datetime
 
@@ -13,7 +13,8 @@ app = Flask(__name__)
 CORS(app)
 
 # 設定 API Keys
-together.api_key = os.getenv("TOGETHER_API_KEY")
+TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY")
+TOGETHER_API_URL = "https://api.together.xyz/inference"
 gmaps = googlemaps.Client(key=os.getenv("GOOGLE_MAPS_API_KEY"))
 
 @app.route("/api/generate-copy", methods=["POST"])
@@ -27,17 +28,37 @@ def generate_copy():
         活動描述：{data.get('description')}
         """
         
-        response = together.Complete.create(
-            prompt=prompt,
-            model="mistral-7b-instruct-v0.2",
-            max_tokens=1000,
-            temperature=0.7
+        # 使用 Together API
+        response = requests.post(
+            TOGETHER_API_URL,
+            headers={
+                "Authorization": f"Bearer {TOGETHER_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": "mistral-7b-instruct-v0.2",
+                "prompt": prompt,
+                "max_tokens": 1000,
+                "temperature": 0.7,
+                "top_p": 0.7,
+                "top_k": 50,
+                "repetition_penalty": 1
+            }
         )
         
-        return jsonify({
-            "success": True,
-            "copies": response.output.text.split("\n\n")
-        })
+        if response.status_code == 200:
+            result = response.json()
+            generated_text = result.get('output', {}).get('text', '')
+            return jsonify({
+                "success": True,
+                "copies": [text.strip() for text in generated_text.split("\n\n") if text.strip()]
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "error": f"API error: {response.status_code}"
+            }), 500
+            
     except Exception as e:
         return jsonify({
             "success": False,
